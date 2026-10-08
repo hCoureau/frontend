@@ -693,6 +693,8 @@ export class HaMap extends ReactiveElement {
     clearTimeout(this._drawnFallback);
     this._mapDrawn = true;
     this._updateMapAppearance();
+    // The first frame is what a fit was waiting for (see _deferUntilReady)
+    this._runPendingFit();
   }
 
   private _loading = false;
@@ -891,7 +893,7 @@ export class HaMap extends ReactiveElement {
       return;
     }
 
-    if (this._deferIfUnsized(() => this.fitMap(options))) {
+    if (this._deferUntilReady(() => this.fitMap(options))) {
       return;
     }
 
@@ -937,10 +939,12 @@ export class HaMap extends ReactiveElement {
     this._hasFitted = true;
   }
 
-  // Fitting uses the container size; before layout it is 0x0 and the zoom
-  // collapses to the minimum, so defer until the resize observer reports one
-  private _deferIfUnsized(fit: () => void): boolean {
-    if (this._engine!.hasUsableSize()) {
+  // A fit needs the container size and, on the vector engine, a first drawn
+  // frame: before layout the size is 0x0 and the zoom collapses to the minimum,
+  // and before a frame the globe's camera solve is not ready and silently
+  // refuses the fit. Defer until the resize observer or _markDrawn re-runs it.
+  private _deferUntilReady(fit: () => void): boolean {
+    if (this._mapDrawn && this._engine!.hasUsableSize()) {
       this._pendingFit = undefined;
       return false;
     }
@@ -952,7 +956,7 @@ export class HaMap extends ReactiveElement {
     if (!this._pendingFit || !this._engine) {
       return;
     }
-    if (this._engine.hasUsableSize()) {
+    if (this._mapDrawn && this._engine.hasUsableSize()) {
       const pendingFit = this._pendingFit;
       this._pendingFit = undefined;
       pendingFit();
@@ -997,7 +1001,7 @@ export class HaMap extends ReactiveElement {
       this._pendingFit = () => this.fitBounds(boundingbox, options);
       return;
     }
-    if (this._deferIfUnsized(() => this.fitBounds(boundingbox, options))) {
+    if (this._deferUntilReady(() => this.fitBounds(boundingbox, options))) {
       return;
     }
     this._withProgrammaticFit(() => {

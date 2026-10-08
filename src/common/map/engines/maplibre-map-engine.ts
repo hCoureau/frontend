@@ -702,6 +702,25 @@ export class MapLibreMapEngine implements MapEngine {
       return;
     }
     const map = this._map!;
+    if ("center" in fit) {
+      // A single point spans no area, so cameraForBounds cannot solve a camera
+      // for it: it warns ("Map cannot fit within canvas") and leaves the view
+      // put, worst on the globe. Center on the point instead of fitting it.
+      if (this._clusterOptions) {
+        this._groupingZoom = fit.zoom;
+        try {
+          this._rebuildClusters(true);
+        } finally {
+          this._groupingZoom = undefined;
+        }
+      }
+      map.easeTo({
+        center: [fit.center[1], fit.center[0]],
+        zoom: fit.zoom,
+        animate: options?.animate,
+      });
+      return;
+    }
     // Regroup now for the zoom the fit lands on
     const zoom = this._clusterOptions
       ? map.cameraForBounds(fit.bounds, fit.options)?.zoom
@@ -721,7 +740,19 @@ export class MapLibreMapEngine implements MapEngine {
     });
   }
 
-  private _fitFor(points: MapLatLng[], options?: MapFitOptions) {
+  private _fitFor(
+    points: MapLatLng[],
+    options?: MapFitOptions
+  ):
+    | { center: MapLatLng; zoom: number }
+    | {
+        bounds: [[number, number], [number, number]];
+        options: {
+          maxZoom: number | undefined;
+          padding: { top: number; right: number; bottom: number; left: number };
+        };
+      }
+    | undefined {
     if (!this._map || !this._maplibre || !points.length) {
       return undefined;
     }
@@ -747,13 +778,11 @@ export class MapLibreMapEngine implements MapEngine {
       left: options?.padding?.left ?? 0,
     };
     if (minLat === maxLat && minLng === maxLng) {
-      // Zero-area bounds: center on the point, keeping the zoom unless given
+      // Zero-area bounds: no camera fits a point, so center on it instead,
+      // keeping the current zoom unless one was given
       return {
-        bounds: [
-          [minLng, minLat],
-          [minLng, minLat],
-        ] as [[number, number], [number, number]],
-        options: { maxZoom: maxZoom ?? this._map.getZoom(), padding },
+        center: [minLat, minLng] as MapLatLng,
+        zoom: maxZoom ?? this._map.getZoom(),
       };
     }
     const pad = options?.pad ?? 0.5;

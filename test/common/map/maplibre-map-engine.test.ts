@@ -738,12 +738,15 @@ describe("MapLibreMapEngine", () => {
       const { engine, map, ready } = await createEngine();
       await ready;
 
-      engine.fitBounds([[52, 4]], { maxZoom: 15, padding: { bottom: 200 } });
+      engine.fitBounds(
+        [
+          [52, 4],
+          [53, 5],
+        ],
+        { maxZoom: 15, padding: { bottom: 200 } }
+      );
       expect(map.fitBounds).toHaveBeenCalledOnce();
-      const [bounds, options] = map.fitBounds.mock.calls[0];
-      // A single point centers on itself at the requested zoom
-      expect(bounds[0]).toEqual([4, 52]);
-      expect(bounds[1]).toEqual([4, 52]);
+      const [, options] = map.fitBounds.mock.calls[0];
       expect(options.maxZoom).toBe(14);
       expect(options.padding).toEqual({
         top: 0,
@@ -751,6 +754,20 @@ describe("MapLibreMapEngine", () => {
         bottom: 200,
         left: 0,
       });
+    });
+
+    it("centers on a single point instead of fitting it", async () => {
+      const { engine, map, ready } = await createEngine();
+      await ready;
+
+      // A point has no extent for cameraForBounds to solve: fitting it warns
+      // ("Map cannot fit within canvas") and leaves the view put on the globe,
+      // so a single point must center on itself at the requested zoom instead
+      engine.fitBounds([[52, 4]], { maxZoom: 15, padding: { bottom: 200 } });
+      expect(map.fitBounds).not.toHaveBeenCalled();
+      expect(map.easeTo).toHaveBeenCalledWith(
+        expect.objectContaining({ center: [4, 52], zoom: 14 })
+      );
     });
 
     it("keeps padded bounds within the poles", async () => {
